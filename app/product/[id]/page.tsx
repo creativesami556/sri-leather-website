@@ -2,8 +2,10 @@
 
 import { useState, use, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { products, Product } from "@/lib/products";
 import ProductCard from "@/components/ProductCard";
+import { supabaseBrowser } from "@/lib/supabase";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -11,6 +13,7 @@ interface PageProps {
 
 export default function ProductDetailPage({ params }: PageProps) {
   const { id } = use(params);
+  const router = useRouter();
   const [product, setProduct] = useState<Product | undefined>(undefined);
   const [catalogList, setCatalogList] = useState<Product[]>([]);
   const [whatsappNumber, setWhatsappNumber] = useState("918978191986");
@@ -38,6 +41,22 @@ export default function ProductDetailPage({ params }: PageProps) {
     if (savedPhone) {
       setWhatsappNumber(savedPhone);
     }
+    
+    // Load wishlist favorite state dynamically
+    supabaseBrowser.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        const savedWish = localStorage.getItem(`sri_leather_wishlist_${session.user.id}`);
+        if (savedWish) {
+          try {
+            const wishlistItems = JSON.parse(savedWish);
+            setIsFavorite(wishlistItems.some((item: any) => item.id === id));
+          } catch (e) {
+            console.error("Error parsing user wishlist", e);
+          }
+        }
+      }
+    });
+
     setLoading(false);
   }, [id]);
 
@@ -88,6 +107,57 @@ export default function ProductDetailPage({ params }: PageProps) {
 
   const toggleSection = (section: string) => {
     setOpenSection(openSection === section ? null : section);
+  };
+
+  const handleWishlistToggle = async () => {
+    if (!product) return;
+
+    try {
+      const { data: { session } } = await supabaseBrowser.auth.getSession();
+      if (!session?.user) {
+        const currentPath = window.location.pathname + window.location.search;
+        router.push(`/login?redirect=${encodeURIComponent(currentPath)}`);
+        return;
+      }
+
+      const uId = session.user.id;
+      const currentWishlistStr = localStorage.getItem(`sri_leather_wishlist_${uId}`);
+      let currentWishlist: any[] = [];
+      if (currentWishlistStr) {
+        try {
+          currentWishlist = JSON.parse(currentWishlistStr);
+        } catch (err) {
+          console.error("Wishlist parse error", err);
+        }
+      }
+
+      let updatedWishlist;
+      if (isFavorite) {
+        updatedWishlist = currentWishlist.filter((item: any) => item.id !== product.id);
+        setIsFavorite(false);
+      } else {
+        const productToSave = {
+          id: product.id,
+          title: product.title,
+          collection: product.collection,
+          price: product.price,
+          originalPrice: product.originalPrice,
+          image: product.image,
+          alt: product.alt,
+          badge: product.badge,
+          discount: product.discount,
+        };
+        updatedWishlist = [...currentWishlist, productToSave];
+        setIsFavorite(true);
+      }
+
+      localStorage.setItem(`sri_leather_wishlist_${uId}`, JSON.stringify(updatedWishlist));
+      window.dispatchEvent(new Event("storage"));
+    } catch (err) {
+      console.error("Product page wishlist check session error:", err);
+      const currentPath = window.location.pathname + window.location.search;
+      router.push(`/login?redirect=${encodeURIComponent(currentPath)}`);
+    }
   };
 
   return (
@@ -345,7 +415,7 @@ export default function ProductDetailPage({ params }: PageProps) {
         <div className="max-w-container-max mx-auto flex items-center justify-between gap-4">
           {/* Wishlist Button */}
           <button
-            onClick={() => setIsFavorite(!isFavorite)}
+            onClick={handleWishlistToggle}
             className="flex items-center justify-center gap-2 px-6 py-3 border border-outline rounded-xl font-label-uppercase text-label-uppercase font-bold text-[#321716] hover:bg-[#f6f3f2] active:scale-95 transition-all cursor-pointer shrink-0"
           >
             <span

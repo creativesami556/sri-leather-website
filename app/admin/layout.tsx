@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
+import { supabaseBrowser } from "@/lib/supabase";
 
 export default function AdminLayout({
   children,
@@ -10,9 +11,105 @@ export default function AdminLayout({
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isAccountMenuOpen, setIsAccountMenuOpen] = useState(false);
   const [showNotificationBadge, setShowNotificationBadge] = useState(true);
+
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    async function checkRole() {
+      try {
+        const { data: { user } } = await supabaseBrowser.auth.getUser();
+        if (!user) {
+          setIsAdmin(false);
+          setCheckingAuth(false);
+          return;
+        }
+
+        // Try querying the profiles database table
+        let dbRole = null;
+        try {
+          const { data, error } = await supabaseBrowser
+            .from("profiles")
+            .select("role")
+            .or(`id.eq.${user.id},email.eq.${user.email}`)
+            .maybeSingle();
+          if (error) {
+            console.error("Admin layout profiles query error:", error);
+          }
+          if (data) {
+            dbRole = data.role;
+          }
+        } catch (dbErr) {
+          console.error("Profiles table fetch error (falling back to metadata)", dbErr);
+        }
+
+        // Robust admin check with fallbacks:
+        // 1. database profile role === admin
+        // 2. user_metadata role === admin
+        // 3. app_metadata role === admin
+        // 4. Test admin email
+        const hasAdminRole = 
+          dbRole === "admin" ||
+          user.user_metadata?.role === "admin" ||
+          user.app_metadata?.role === "admin" ||
+          user.email === "admin@srileather.com";
+
+        setIsAdmin(!!hasAdminRole);
+      } catch (err) {
+        console.error("Admin verification error:", err);
+        setIsAdmin(false);
+      } finally {
+        setCheckingAuth(false);
+      }
+    }
+    checkRole();
+  }, []);
+
+  if (checkingAuth) {
+    return (
+      <div className="min-h-screen bg-[#fcf9f8] flex flex-col items-center justify-center text-center p-6">
+        <div className="w-12 h-12 border-4 border-[#321716]/10 border-t-[#321716] rounded-full animate-spin"></div>
+        <p className="text-body-md text-[#504443] mt-4 font-medium">Verifying administrator permissions...</p>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen bg-[#fcf9f8] flex flex-col items-center justify-center p-6 text-center">
+        <div className="bg-white border border-[#d4c3c1]/30 rounded-2xl p-8 max-w-md w-full shadow-xl space-y-6">
+          <div className="w-16 h-16 bg-[#ba1a1a]/10 text-[#ba1a1a] rounded-full flex items-center justify-center mx-auto">
+            <span className="material-symbols-outlined text-3xl">admin_panel_settings</span>
+          </div>
+          <div className="space-y-2">
+            <h2 className="font-display-lg text-2xl font-bold text-[#321716]">Access Denied</h2>
+            <p className="text-body-sm text-[#504443] leading-relaxed">
+              You do not have permission to view the heritage manager panel. 
+              This section is reserved for storefront administrators.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 pt-2">
+            <Link
+              href="/login?redirect=/admin"
+              className="py-3 bg-[#4a2c2a] text-[#ffdad7] font-bold text-label-uppercase rounded-xl hover:opacity-90 active:scale-95 transition-all text-xs uppercase tracking-wider"
+            >
+              Sign In as Admin
+            </Link>
+            <Link
+              href="/"
+              className="py-3 border border-outline rounded-xl font-bold text-label-uppercase text-[#321716] hover:bg-[#f6f3f2] active:scale-95 transition-all text-xs uppercase tracking-wider"
+            >
+              Return to Storefront
+            </Link>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   const navItems = [
     { label: "Dashboard", href: "/admin", icon: "dashboard" },

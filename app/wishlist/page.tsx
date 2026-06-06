@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { products, Product } from "@/lib/products";
+import { supabaseBrowser } from "@/lib/supabase";
 
 interface CartItem {
   product: Product;
@@ -19,28 +20,53 @@ export default function WishlistCartPage() {
   // Load cart from localStorage or pre-populate
   const [cart, setCart] = useState<CartItem[]>([]);
   const [whatsappNumber, setWhatsappNumber] = useState("918978191986");
+  
+  const [user, setUser] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   useEffect(() => {
-    // Initial load
-    const savedWish = localStorage.getItem("sri_leather_wishlist");
-    if (savedWish) {
-      setWishlist(JSON.parse(savedWish));
-    } else {
-      // Default mock wishlist items matching screenshot
-      const items = [
-        products.find((p) => p.id === "prod-1") || products[0],
-        products.find((p) => p.id === "prod-3") || products[1],
-        products.find((p) => p.id === "prod-4") || products[2],
-      ].filter(Boolean) as Product[];
-      setWishlist(items);
-      localStorage.setItem("sri_leather_wishlist", JSON.stringify(items));
-    }
+    // Listen to Supabase auth state change
+    const { data: { subscription } } = supabaseBrowser.auth.onAuthStateChange(async (event, session) => {
+      const currentUser = session?.user || null;
+      setUser(currentUser);
 
+      if (currentUser) {
+        // Logged-in user
+        const guestWish = localStorage.getItem("sri_leather_wishlist");
+        const userWishKey = `sri_leather_wishlist_${currentUser.id}`;
+        const userWish = localStorage.getItem(userWishKey);
+        
+        let mergedWishlist = userWish ? JSON.parse(userWish) : [];
+        if (guestWish) {
+          try {
+            const guestWishlist = JSON.parse(guestWish);
+            const mergedMap = new Map();
+            // Merge existing user wishlist items
+            mergedWishlist.forEach((item: any) => mergedMap.set(item.id, item));
+            // Merge guest wishlist items (taking priority or appending)
+            guestWishlist.forEach((item: any) => mergedMap.set(item.id, item));
+            mergedWishlist = Array.from(mergedMap.values());
+            
+            localStorage.setItem(userWishKey, JSON.stringify(mergedWishlist));
+            localStorage.removeItem("sri_leather_wishlist");
+          } catch (e) {
+            console.error("Migration error", e);
+          }
+        }
+        setWishlist(mergedWishlist);
+      } else {
+        // Not logged in
+        setWishlist([]);
+      }
+
+      setAuthLoading(false);
+    });
+
+    // Load Cart (independent of login state)
     const savedCart = localStorage.getItem("sri_leather_cart");
     if (savedCart) {
       setCart(JSON.parse(savedCart));
     } else {
-      // Default mock cart items
       const items: CartItem[] = [
         {
           product: products.find((p) => p.id === "prod-9") || products[0],
@@ -63,11 +89,19 @@ export default function WishlistCartPage() {
     if (savedPhone) {
       setWhatsappNumber(savedPhone);
     }
+
+    return () => {
+      subscription.unsubscribe();
+    };
   }, []);
 
   const saveWishlist = (newWish: Product[]) => {
     setWishlist(newWish);
-    localStorage.setItem("sri_leather_wishlist", JSON.stringify(newWish));
+    if (user) {
+      localStorage.setItem(`sri_leather_wishlist_${user.id}`, JSON.stringify(newWish));
+    } else {
+      localStorage.setItem("sri_leather_wishlist", JSON.stringify(newWish));
+    }
   };
 
   const saveCart = (newCart: CartItem[]) => {
@@ -171,7 +205,26 @@ export default function WishlistCartPage() {
       {/* Tab: Wishlist View */}
       {activeTab === "wishlist" && (
         <section className="max-w-4xl mx-auto">
-          {wishlist.length > 0 ? (
+          {authLoading ? (
+            <div className="flex flex-col items-center justify-center py-20">
+              <div className="w-10 h-10 border-4 border-[#321716]/10 border-t-[#321716] rounded-full animate-spin"></div>
+              <p className="text-body-sm text-outline mt-4">Loading your wishlist...</p>
+            </div>
+          ) : !user ? (
+            <div className="text-center py-20 space-y-6 max-w-sm mx-auto">
+              <span className="material-symbols-outlined text-6xl text-outline mb-2">lock</span>
+              <h3 className="font-display-lg text-xl font-bold text-[#321716]">Sign In to View Wishlist</h3>
+              <p className="text-body-sm text-[#504443] leading-relaxed">
+                Wishlist is only available for registered users. Log in to save items and sync them across all your devices.
+              </p>
+              <Link
+                href="/login?redirect=/wishlist"
+                className="inline-block px-8 py-3 bg-[#4a2c2a] text-[#ffdad7] font-bold text-label-uppercase rounded-xl hover:opacity-90 active:scale-95 transition-all text-xs uppercase tracking-wider"
+              >
+                Sign In or Sign Up
+              </Link>
+            </div>
+          ) : wishlist.length > 0 ? (
             <div className="grid grid-cols-2 md:grid-cols-3 gap-gutter">
               {wishlist.map((item) => (
                 <div

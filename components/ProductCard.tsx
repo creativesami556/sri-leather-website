@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { supabaseBrowser } from "@/lib/supabase";
 
 interface ProductCardProps {
   id: string;
@@ -26,10 +28,83 @@ export default function ProductCard({
   badge,
   discount,
 }: ProductCardProps) {
+  const router = useRouter();
   const [isFavorite, setIsFavorite] = useState(false);
+  const [userId, setUserId] = useState<string | null>(null);
+
+  useEffect(() => {
+    supabaseBrowser.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        setUserId(session.user.id);
+        const savedWish = localStorage.getItem(`sri_leather_wishlist_${session.user.id}`);
+        if (savedWish) {
+          try {
+            const list = JSON.parse(savedWish);
+            const isFav = list.some((item: any) => item.id === id);
+            setIsFavorite(isFav);
+          } catch (e) {
+            console.error("Error parsing user wishlist", e);
+          }
+        }
+      }
+    });
+  }, [id]);
 
   const formatPrice = (amount: number) => {
     return `₹${amount.toLocaleString("en-IN")}`;
+  };
+
+  const handleWishlistToggle = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    try {
+      const { data: { session } } = await supabaseBrowser.auth.getSession();
+      if (!session?.user) {
+        const currentPath = window.location.pathname + window.location.search;
+        router.push(`/login?redirect=${encodeURIComponent(currentPath)}`);
+        return;
+      }
+
+      const uId = session.user.id;
+      const currentWishlistStr = localStorage.getItem(`sri_leather_wishlist_${uId}`);
+      let currentWishlist: any[] = [];
+      if (currentWishlistStr) {
+        try {
+          currentWishlist = JSON.parse(currentWishlistStr);
+        } catch (err) {
+          console.error("Wishlist parse error", err);
+        }
+      }
+
+      let updatedWishlist;
+      if (isFavorite) {
+        updatedWishlist = currentWishlist.filter((item: any) => item.id !== id);
+        setIsFavorite(false);
+      } else {
+        const productToSave = {
+          id,
+          title,
+          collection,
+          price,
+          originalPrice,
+          image,
+          alt,
+          badge,
+          discount,
+        };
+        updatedWishlist = [...currentWishlist, productToSave];
+        setIsFavorite(true);
+      }
+
+      localStorage.setItem(`sri_leather_wishlist_${uId}`, JSON.stringify(updatedWishlist));
+      // Trigger custom storage event to update other components dynamically
+      window.dispatchEvent(new Event("storage"));
+    } catch (err) {
+      console.error("Wishlist check session error:", err);
+      const currentPath = window.location.pathname + window.location.search;
+      router.push(`/login?redirect=${encodeURIComponent(currentPath)}`);
+    }
   };
 
   return (
@@ -44,11 +119,7 @@ export default function ProductCard({
         
         {/* Wishlist Button */}
         <button
-          onClick={(e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            setIsFavorite(!isFavorite);
-          }}
+          onClick={handleWishlistToggle}
           className="absolute top-3 right-3 w-10 h-10 bg-white/80 backdrop-blur-md rounded-full flex items-center justify-center text-[#321716] transition-all hover:scale-110 active:scale-95 z-10 cursor-pointer"
         >
           <span

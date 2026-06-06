@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { supabaseBrowser } from "@/lib/supabase";
 
 export default function Navbar() {
   const [isScrolled, setIsScrolled] = useState(false);
@@ -10,6 +11,26 @@ export default function Navbar() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const router = useRouter();
+
+  const [user, setUser] = useState<any>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [showAccountDropdown, setShowAccountDropdown] = useState(false);
+  const [cartCount, setCartCount] = useState(0);
+
+  const updateCartCount = () => {
+    const savedCart = localStorage.getItem("sri_leather_cart");
+    if (savedCart) {
+      try {
+        const items = JSON.parse(savedCart);
+        const count = items.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0);
+        setCartCount(count);
+      } catch (e) {
+        setCartCount(0);
+      }
+    } else {
+      setCartCount(0);
+    }
+  };
 
   useEffect(() => {
     const handleScroll = () => {
@@ -20,7 +41,49 @@ export default function Navbar() {
       }
     };
     window.addEventListener("scroll", handleScroll);
-    return () => window.removeEventListener("scroll", handleScroll);
+    updateCartCount();
+
+    // Listen to storage event (cart updates)
+    window.addEventListener("storage", updateCartCount);
+
+    // Listen to Supabase auth state change
+    const { data: { subscription } } = supabaseBrowser.auth.onAuthStateChange(async (event, session) => {
+      const currentUser = session?.user || null;
+      setUser(currentUser);
+
+      if (currentUser) {
+        let dbRole = null;
+        try {
+          const { data, error } = await supabaseBrowser
+            .from("profiles")
+            .select("role")
+            .or(`id.eq.${currentUser.id},email.eq.${currentUser.email}`)
+            .maybeSingle();
+          if (error) {
+            console.error("Navbar profiles query error:", error);
+          }
+          if (data) dbRole = data.role;
+        } catch (e) {
+          console.error("Navbar profiles query exception:", e);
+        }
+
+        const isUserAdmin = 
+          dbRole === "admin" ||
+          currentUser.user_metadata?.role === "admin" ||
+          currentUser.app_metadata?.role === "admin" ||
+          currentUser.email === "admin@srileather.com";
+        
+        setIsAdmin(!!isUserAdmin);
+      } else {
+        setIsAdmin(false);
+      }
+    });
+
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("storage", updateCartCount);
+      subscription.unsubscribe();
+    };
   }, []);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
@@ -103,18 +166,81 @@ export default function Navbar() {
             <Link href="/shop" className="text-[#504443] hover:text-[#321716] transition-colors md:hidden flex items-center">
               <span className="material-symbols-outlined">search</span>
             </Link>
-            <Link href="/about" className="hidden md:flex text-[#321716] hover:opacity-80 transition-all">
-              <span className="material-symbols-outlined">person</span>
-            </Link>
+            
+            {user ? (
+              <div className="relative">
+                <button
+                  onClick={() => setShowAccountDropdown(!showAccountDropdown)}
+                  className="hidden md:flex items-center gap-1 text-[#321716] hover:opacity-80 transition-all cursor-pointer bg-[#f6f3f2] px-3 py-1.5 rounded-full"
+                >
+                  <span className="material-symbols-outlined text-[20px]">account_circle</span>
+                  <span className="text-xs font-bold text-[#321716] max-w-[80px] truncate">
+                    {user.user_metadata?.full_name?.split(" ")[0] || "Account"}
+                  </span>
+                  <span className="material-symbols-outlined text-[16px]">expand_more</span>
+                </button>
+
+                {showAccountDropdown && (
+                  <>
+                    <div className="fixed inset-0 z-40" onClick={() => setShowAccountDropdown(false)} />
+                    <div className="absolute right-0 mt-2 w-48 bg-white border border-[#d4c3c1]/40 rounded-xl shadow-lg z-50 p-2 space-y-1">
+                      <div className="px-3 py-2 border-b border-[#d4c3c1]/10 text-left">
+                        <p className="text-xs font-bold text-[#321716] truncate">
+                          {user.user_metadata?.full_name || "User Account"}
+                        </p>
+                        <p className="text-[10px] text-outline truncate">{user.email}</p>
+                      </div>
+                      <Link
+                        href="/wishlist"
+                        onClick={() => setShowAccountDropdown(false)}
+                        className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#504443] hover:bg-[#f6f3f2] rounded-lg transition-colors"
+                      >
+                        <span className="material-symbols-outlined text-sm">favorite</span> My Wishlist
+                      </Link>
+                      {isAdmin && (
+                        <Link
+                          href="/admin"
+                          onClick={() => setShowAccountDropdown(false)}
+                          className="flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#504443] hover:bg-[#f6f3f2] rounded-lg transition-colors"
+                        >
+                          <span className="material-symbols-outlined text-sm">admin_panel_settings</span> Admin Panel
+                        </Link>
+                      )}
+                      <button
+                        onClick={async () => {
+                          setShowAccountDropdown(false);
+                          await supabaseBrowser.auth.signOut();
+                          router.push("/");
+                          router.refresh();
+                        }}
+                        className="w-full flex items-center gap-2 px-3 py-2 text-xs font-semibold text-[#ba1a1a] hover:bg-red-50 rounded-lg transition-colors text-left border-t border-[#d4c3c1]/10 pt-2 cursor-pointer"
+                      >
+                        <span className="material-symbols-outlined text-sm">logout</span> Sign Out
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <Link
+                href="/login"
+                className="hidden md:flex items-center gap-1 px-4 py-2 border border-outline rounded-full font-bold text-[#321716] hover:bg-[#f6f3f2] active:scale-95 transition-all text-xs uppercase tracking-wider"
+              >
+                Sign In
+              </Link>
+            )}
+
             <Link
               href="/wishlist"
               className="text-[#321716] hover:opacity-80 transition-all relative flex items-center gap-1"
             >
               <span className="material-symbols-outlined">shopping_bag</span>
               <span className="hidden md:inline font-label-uppercase text-label-uppercase text-[#321716]">Cart</span>
-              <span className="absolute -top-1 -right-1 md:-top-2 md:-right-2 bg-[#4a2c2a] text-[#ffdad7] text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold shadow-sm">
-                2
-              </span>
+              {cartCount > 0 && (
+                <span className="absolute -top-1 -right-1 md:-top-2 md:-right-2 bg-[#4a2c2a] text-[#ffdad7] text-[10px] w-4 h-4 flex items-center justify-center rounded-full font-bold shadow-sm">
+                  {cartCount}
+                </span>
+              )}
             </Link>
           </div>
         </div>
@@ -158,7 +284,7 @@ export default function Navbar() {
               { label: "Store Locations", href: "/locations", icon: "store" },
               { label: "My Wishlist & Cart", href: "/wishlist", icon: "favorite" },
               { label: "About & Contact", href: "/about", icon: "info" },
-              { label: "Admin Portal", href: "/admin", icon: "admin_panel_settings" },
+              ...(isAdmin ? [{ label: "Admin Portal", href: "/admin", icon: "admin_panel_settings" }] : []),
             ].map((item) => (
               <Link
                 key={item.label}
@@ -170,6 +296,30 @@ export default function Navbar() {
                 {item.label}
               </Link>
             ))}
+
+            {user ? (
+              <button
+                onClick={async () => {
+                  setIsDrawerOpen(false);
+                  await supabaseBrowser.auth.signOut();
+                  router.push("/");
+                  router.refresh();
+                }}
+                className="w-full flex items-center gap-4 px-4 py-3.5 rounded-xl text-body-md font-bold text-[#ba1a1a] hover:bg-red-50 transition-all text-left cursor-pointer"
+              >
+                <span className="material-symbols-outlined text-[#ba1a1a]">logout</span>
+                Sign Out
+              </button>
+            ) : (
+              <Link
+                href="/login"
+                onClick={() => setIsDrawerOpen(false)}
+                className="flex items-center gap-4 px-4 py-3.5 rounded-xl text-body-md font-bold text-[#20ba56] hover:bg-emerald-50 transition-all"
+              >
+                <span className="material-symbols-outlined text-[#20ba56]">login</span>
+                Sign In
+              </Link>
+            )}
           </nav>
         </div>
 
