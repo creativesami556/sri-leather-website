@@ -5,6 +5,31 @@ import { useSearchParams } from "next/navigation";
 import ProductCard from "@/components/ProductCard";
 import FilterDrawer from "@/components/FilterDrawer";
 import { products, Product } from "@/lib/products";
+import { supabaseBrowser } from "@/lib/supabase";
+
+function mapDbProductToProduct(dbProd: any): Product {
+  return {
+    id: dbProd.id,
+    title: dbProd.name || "Unnamed Product",
+    article: dbProd.article_number || "",
+    collection: dbProd.category || "Footwear",
+    price: Number(dbProd.discount_price) || 0,
+    originalPrice: dbProd.original_price ? Number(dbProd.original_price) : undefined,
+    image: (dbProd.images && dbProd.images[0]) || "https://images.unsplash.com/photo-1549298916-b41d501d3772?q=80&w=800&auto=format&fit=crop",
+    alt: `${dbProd.name || "product"} leather shoe`,
+    categories: [dbProd.gender || "Unisex", dbProd.category || "Formal"],
+    description: `Premium shoe styled in high-grade ${dbProd.material || "Leather"} by ${dbProd.brand || "Sri Leather"}.`,
+    features: [
+      dbProd.material || "Premium Leather",
+      "Stitched leather welt details",
+      "Ergonomic padded ortholite insoles",
+      "High-grip premium outsoles"
+    ],
+    colors: [{ name: "Standard", hex: "#4A2C2A" }],
+    sizes: [7, 8, 9, 10, 11],
+    thumbnails: dbProd.images || [],
+  };
+}
 
 function ShopContent() {
   const searchParams = useSearchParams();
@@ -71,12 +96,38 @@ function ShopContent() {
   const [productsList, setProductsList] = useState<Product[]>([]);
 
   useEffect(() => {
-    const saved = localStorage.getItem("sri_leather_admin_products");
-    if (saved) {
-      setProductsList(JSON.parse(saved));
-    } else {
-      setProductsList(products);
+    async function loadProducts() {
+      const saved = localStorage.getItem("sri_leather_admin_products");
+      let currentList: Product[] = saved ? JSON.parse(saved) : [...products];
+
+      try {
+        const { data: dbProducts, error } = await supabaseBrowser
+          .from("products")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (!error && dbProducts) {
+          const mappedDb: Product[] = dbProducts.map(mapDbProductToProduct);
+          const mergedList = [...currentList];
+          
+          for (const dbItem of mappedDb) {
+            const index = mergedList.findIndex((p) => p.article === dbItem.article);
+            if (index !== -1) {
+              mergedList[index] = { ...mergedList[index], ...dbItem };
+            } else {
+              mergedList.unshift(dbItem);
+            }
+          }
+          currentList = mergedList;
+        }
+      } catch (err) {
+        console.error("Failed to load products from Supabase in shop content:", err);
+      }
+
+      setProductsList(currentList);
     }
+
+    loadProducts();
   }, []);
 
   const filteredProducts = useMemo(() => {

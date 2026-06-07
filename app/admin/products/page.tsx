@@ -4,6 +4,31 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { products, Product } from "@/lib/products";
+import { supabaseBrowser } from "@/lib/supabase";
+
+function mapDbProductToProduct(dbProd: any): Product {
+  return {
+    id: dbProd.id,
+    title: dbProd.name || "Unnamed Product",
+    article: dbProd.article_number || "",
+    collection: dbProd.category || "Footwear",
+    price: Number(dbProd.discount_price) || 0,
+    originalPrice: dbProd.original_price ? Number(dbProd.original_price) : undefined,
+    image: (dbProd.images && dbProd.images[0]) || "https://images.unsplash.com/photo-1549298916-b41d501d3772?q=80&w=800&auto=format&fit=crop",
+    alt: `${dbProd.name || "product"} leather shoe`,
+    categories: [dbProd.gender || "Unisex", dbProd.category || "Formal"],
+    description: `Premium shoe styled in high-grade ${dbProd.material || "Leather"} by ${dbProd.brand || "Sri Leather"}.`,
+    features: [
+      dbProd.material || "Premium Leather",
+      "Stitched leather welt details",
+      "Ergonomic padded ortholite insoles",
+      "High-grip premium outsoles"
+    ],
+    colors: [{ name: "Standard", hex: "#4A2C2A" }],
+    sizes: [7, 8, 9, 10, 11],
+    thumbnails: dbProd.images || [],
+  };
+}
 
 export default function ManageProductsPage() {
   const router = useRouter();
@@ -17,13 +42,38 @@ export default function ManageProductsPage() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   useEffect(() => {
-    const saved = localStorage.getItem("sri_leather_admin_products");
-    if (saved) {
-      setAdminProducts(JSON.parse(saved));
-    } else {
-      setAdminProducts(products);
-      localStorage.setItem("sri_leather_admin_products", JSON.stringify(products));
+    async function loadProducts() {
+      const saved = localStorage.getItem("sri_leather_admin_products");
+      let currentList: Product[] = saved ? JSON.parse(saved) : [...products];
+
+      try {
+        const { data: dbProducts, error } = await supabaseBrowser
+          .from("products")
+          .select("*")
+          .order("created_at", { ascending: false });
+
+        if (!error && dbProducts) {
+          const mappedDb: Product[] = dbProducts.map(mapDbProductToProduct);
+          const mergedList = [...currentList];
+          
+          for (const dbItem of mappedDb) {
+            const index = mergedList.findIndex((p) => p.article === dbItem.article);
+            if (index !== -1) {
+              mergedList[index] = { ...mergedList[index], ...dbItem };
+            } else {
+              mergedList.unshift(dbItem);
+            }
+          }
+          currentList = mergedList;
+        }
+      } catch (err) {
+        console.error("Failed to load products from Supabase:", err);
+      }
+
+      setAdminProducts(currentList);
     }
+
+    loadProducts();
   }, []);
 
   const triggerToast = (msg: string) => {
@@ -36,11 +86,40 @@ export default function ManageProductsPage() {
     localStorage.setItem("sri_leather_admin_products", JSON.stringify(updatedList));
   };
 
-  const handleDelete = (id: string, title: string) => {
+  const handleDelete = async (id: string, title: string) => {
     if (confirm(`Are you sure you want to delete "${title}"?`)) {
+      const match = adminProducts.find((p) => p.id === id);
       const updated = adminProducts.filter((p) => p.id !== id);
       saveToStorage(updated);
       triggerToast(`Successfully deleted "${title}"`);
+
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+      if (isUuid) {
+        try {
+          await supabaseBrowser.from("products").delete().eq("id", id);
+        } catch (err) {
+          console.error("Failed to delete product from Supabase:", err);
+        }
+      }
+
+      if (match && match.thumbnails && match.thumbnails.length > 0) {
+        const pathsToDelete = match.thumbnails
+          .map((url) => {
+            const parts = url.split("/product-images/");
+            return parts.length > 1 ? parts[1] : null;
+          })
+          .filter(Boolean) as string[];
+
+        if (pathsToDelete.length > 0) {
+          try {
+            await supabaseBrowser.storage
+              .from("product-images")
+              .remove(pathsToDelete);
+          } catch (err) {
+            console.error("Failed to delete images from storage:", err);
+          }
+        }
+      }
     }
   };
 

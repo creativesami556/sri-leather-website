@@ -4,6 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { products, Product } from "@/lib/products";
+import { supabaseBrowser } from "@/lib/supabase";
 
 function AddProductForm() {
   const router = useRouter();
@@ -17,6 +18,7 @@ function AddProductForm() {
   const [gender, setGender] = useState("Men");
   const [collection, setCollection] = useState("Heritage Elite");
   const [material, setMaterial] = useState("Full Grain Leather");
+  const [brand, setBrand] = useState("Sri Leather");
   const [price, setPrice] = useState("");
   const [originalPrice, setOriginalPrice] = useState("");
   const [globalStock, setGlobalStock] = useState("35");
@@ -25,6 +27,10 @@ function AddProductForm() {
   const [isNewArrival, setIsNewArrival] = useState(false);
   const [imageUrl, setImageUrl] = useState("https://images.unsplash.com/photo-1549298916-b41d501d3772?q=80&w=800&auto=format&fit=crop");
   const [badgeText, setBadgeText] = useState("");
+
+  // Storage states
+  const [uploading, setUploading] = useState(false);
+  const [uploadedImages, setUploadedImages] = useState<string[]>([]);
 
   // Variants
   const [variants, setVariants] = useState([
@@ -68,10 +74,16 @@ function AddProductForm() {
         );
         setCollection(match.collection || "");
         setMaterial(match.features[0] || "Premium Hide");
+        setBrand(
+          match.description?.includes("by ")
+            ? match.description.split("by ").pop()?.replace(/\.$/, "") || "Sri Leather"
+            : "Sri Leather"
+        );
         setPrice(match.price.toString());
         setOriginalPrice(match.originalPrice ? match.originalPrice.toString() : "");
         setIsNewArrival(match.badge?.toLowerCase().includes("new") || false);
         setImageUrl(match.image);
+        setUploadedImages(match.thumbnails || [match.image]);
         setBadgeText(match.badge || "");
 
         // Load variants from product colors & sizes
@@ -115,7 +127,51 @@ function AddProductForm() {
     );
   };
 
-  const handleSave = (e: React.FormEvent) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!e.target.files || e.target.files.length === 0) return;
+    setUploading(true);
+    try {
+      const files = Array.from(e.target.files);
+      const urls: string[] = [...uploadedImages];
+
+      for (const file of files) {
+        const fileExt = file.name.split(".").pop();
+        const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 11)}.${fileExt}`;
+        const filePath = `products/${fileName}`;
+
+        const { data, error } = await supabaseBrowser.storage
+          .from("product-images")
+          .upload(filePath, file, {
+            cacheControl: "3600",
+            upsert: false,
+          });
+
+        if (error) {
+          console.error("Storage upload error:", error);
+          alert(`Failed to upload ${file.name}: ${error.message}`);
+          continue;
+        }
+
+        const { data: { publicUrl } } = supabaseBrowser.storage
+          .from("product-images")
+          .getPublicUrl(filePath);
+
+        urls.push(publicUrl);
+      }
+
+      setUploadedImages(urls);
+      if (urls.length > 0) {
+        setImageUrl(urls[urls.length - 1]);
+      }
+    } catch (err: any) {
+      console.error("Upload handler exception:", err);
+      alert("An unexpected error occurred during image upload.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title || !price || !article) {
       alert("Please fill in Product Name, Article #, and Price.");
@@ -123,25 +179,100 @@ function AddProductForm() {
     }
 
     setSaving(true);
+    try {
+      const finalImages = uploadedImages.length > 0 ? uploadedImages : imageUrl ? [imageUrl] : [];
 
-    setTimeout(() => {
+      // 1. Prepare and insert/update product in database
+      let supabaseId = null;
+      const payload = {
+        name: title,
+        article_number: article,
+        category,
+        gender,
+        brand,
+        material,
+        original_price: originalPrice ? Number(originalPrice) : null,
+        discount_price: Number(price),
+        images: finalImages,
+      };
+
+      let dbError = null;
+
+      if (editId) {
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(editId);
+        
+        if (isUuid) {
+          const { data, error } = await supabaseBrowser
+            .from("products")
+            .update(payload)
+            .eq("id", editId)
+            .select();
+          dbError = error;
+          if (data && data[0]) {
+            supabaseId = data[0].id;
+          }
+        } else {
+          // Check if article number exists in DB
+          const { data: existing } = await supabaseBrowser
+            .from("products")
+            .select("id")
+            .eq("article_number", article)
+            .maybeSingle();
+
+          if (existing) {
+            const { data, error } = await supabaseBrowser
+              .from("products")
+              .update(payload)
+              .eq("id", existing.id)
+              .select();
+            dbError = error;
+            if (data && data[0]) {
+              supabaseId = data[0].id;
+            }
+          } else {
+            const { data, error } = await supabaseBrowser
+              .from("products")
+              .insert(payload)
+              .select();
+            dbError = error;
+            if (data && data[0]) {
+              supabaseId = data[0].id;
+            }
+          }
+        }
+      } else {
+        const { data, error } = await supabaseBrowser
+          .from("products")
+          .insert(payload)
+          .select();
+        dbError = error;
+        if (data && data[0]) {
+          supabaseId = data[0].id;
+        }
+      }
+
+      if (dbError) {
+        throw new Error(dbError.message);
+      }
+
+      // 2. Synchronize with localStorage compatibility layer
+      const localId = supabaseId || editId || `prod-new-${Date.now()}`;
       const saved = localStorage.getItem("sri_leather_admin_products");
       let list: Product[] = saved ? JSON.parse(saved) : [...products];
 
       const productCategories = [gender, category];
-
       const newProduct: Product = {
-        id: editId || `prod-new-${Date.now()}`,
+        id: localId,
         title,
         article,
         collection: collection || (isNewArrival ? "NEW ARRIVAL" : "CLASSIC"),
         price: Number(price),
         originalPrice: originalPrice ? Number(originalPrice) : undefined,
-        image: imageUrl,
-        alt: `${title} luxury leather shoe`,
+        image: finalImages[0] || imageUrl,
+        alt: `${title} luxury leather shoe by ${brand}`,
         badge: badgeText || (isNewArrival ? "NEW ARRIVAL" : isFeatured ? "FEATURED" : undefined),
         categories: productCategories,
-        description: `Handcrafted premium shoe styled in high-grade ${material} with tailored support.`,
+        description: `Handcrafted premium shoe styled in high-grade ${material} by ${brand}.`,
         features: [
           material,
           "Stitched leather welt details",
@@ -150,7 +281,7 @@ function AddProductForm() {
         ],
         colors: variants.map((v) => ({ name: v.color, hex: v.hex })),
         sizes: Array.from(new Set(variants.map((v) => Number(v.size)))),
-        thumbnails: [imageUrl],
+        thumbnails: finalImages,
       };
 
       if (editId) {
@@ -160,13 +291,33 @@ function AddProductForm() {
       }
 
       localStorage.setItem("sri_leather_admin_products", JSON.stringify(list));
-      setSaving(false);
+
       setSavedSuccess(true);
 
+      // Reset form states
+      setTitle("");
+      setArticle("");
+      setCategory("Formal");
+      setGender("Men");
+      setCollection("Heritage Elite");
+      setMaterial("Full Grain Leather");
+      setBrand("Sri Leather");
+      setPrice("");
+      setOriginalPrice("");
+      setUploadedImages([]);
+      setImageUrl("");
+      setBadgeText("");
+
       setTimeout(() => {
+        setSavedSuccess(false);
         router.push("/admin/products");
       }, 1500);
-    }, 1500);
+    } catch (err: any) {
+      console.error("Save error:", err);
+      alert(`Error saving product: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -278,6 +429,16 @@ function AddProductForm() {
                 className="w-full bg-transparent border-0 border-b border-[#d4c3c1] py-2 focus:ring-0 focus:border-[#321716] transition-all text-body-md outline-none"
               />
             </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-[#504443] uppercase tracking-wider block">Brand</label>
+              <input
+                type="text"
+                placeholder="e.g. Sri Leather"
+                value={brand}
+                onChange={(e) => setBrand(e.target.value)}
+                className="w-full bg-transparent border-0 border-b border-[#d4c3c1] py-2 focus:ring-0 focus:border-[#321716] transition-all text-body-md outline-none"
+              />
+            </div>
           </div>
         </section>
 
@@ -345,35 +506,99 @@ function AddProductForm() {
         {/* Section 3: Media Upload */}
         <section className="space-y-6">
           <div className="border-l-4 border-[#321716] pl-4">
-            <h3 className="font-display-lg text-xl font-bold text-[#321716]">Product Image</h3>
-            <p className="text-body-sm text-[#504443]">Provide a valid URL to show the item in storefront.</p>
+            <h3 className="font-display-lg text-xl font-bold text-[#321716]">Product Images</h3>
+            <p className="text-body-sm text-[#504443]">Upload local images or paste a remote URL.</p>
           </div>
-          <div className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-[#504443] uppercase tracking-wider block">Image Source URL</label>
-              <input
-                type="text"
-                placeholder="https://images.unsplash.com/..."
-                value={imageUrl}
-                onChange={(e) => setImageUrl(e.target.value)}
-                className="w-full bg-transparent border-0 border-b border-[#d4c3c1] py-2 focus:ring-0 focus:border-[#321716] transition-all text-body-md outline-none"
-              />
-            </div>
-            {imageUrl && (
-              <div className="relative w-40 h-40 rounded-xl overflow-hidden border border-[#d4c3c1] group bg-stone-100 shadow-inner">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={imageUrl}
-                  alt="Product preview"
-                  className="w-full h-full object-cover"
+          <div className="space-y-6">
+            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+              <div className="flex-1 w-full space-y-1">
+                <label className="text-[10px] font-bold text-[#504443] uppercase tracking-wider block">Image Source URL</label>
+                <input
+                  type="text"
+                  placeholder="https://images.unsplash.com/..."
+                  value={imageUrl}
+                  onChange={(e) => setImageUrl(e.target.value)}
+                  className="w-full bg-transparent border-0 border-b border-[#d4c3c1] py-2 focus:ring-0 focus:border-[#321716] transition-all text-body-md outline-none"
                 />
-                <button
-                  type="button"
-                  onClick={() => setImageUrl("")}
-                  className="absolute top-1 right-1 bg-red-100 text-[#ba1a1a] rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+              </div>
+              <div className="pt-2 sm:pt-4">
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleImageUpload}
+                  className="hidden"
+                  id="product-image-upload"
+                  disabled={uploading}
+                />
+                <label
+                  htmlFor="product-image-upload"
+                  className={`flex items-center gap-2 px-5 py-2.5 border border-dashed rounded-xl hover:bg-[#fcf9f8] cursor-pointer text-body-sm font-semibold transition-all ${
+                    uploading
+                      ? "border-amber-400 text-amber-700 bg-amber-50"
+                      : "border-[#d4c3c1] text-[#504443]"
+                  }`}
                 >
-                  <span className="material-symbols-outlined text-[16px]">close</span>
-                </button>
+                  <span className="material-symbols-outlined text-[20px] animate-pulse">
+                    {uploading ? "sync" : "upload_file"}
+                  </span>
+                  <span>{uploading ? "Uploading..." : "Upload Local Image(s)"}</span>
+                </label>
+              </div>
+            </div>
+
+            {/* Preview gallery */}
+            {(imageUrl || uploadedImages.length > 0) && (
+              <div className="space-y-3">
+                <label className="text-[10px] font-bold text-[#504443] uppercase tracking-wider block">Images Preview</label>
+                <div className="flex flex-wrap gap-4">
+                  {imageUrl && !uploadedImages.includes(imageUrl) && (
+                    <div className="relative w-28 h-28 rounded-xl overflow-hidden border-2 border-dashed border-[#321716] group bg-stone-100 shadow-inner">
+                      <img src={imageUrl} alt="Pasted preview" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="text-[8px] font-bold text-white uppercase tracking-wider bg-[#321716] px-1.5 py-0.5 rounded">URL Input</span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setImageUrl("")}
+                        className="absolute top-1 right-1 bg-red-100 text-[#ba1a1a] rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">close</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {uploadedImages.map((url, idx) => (
+                    <div key={url} className="relative w-28 h-28 rounded-xl overflow-hidden border border-[#d4c3c1] group bg-stone-100 shadow-inner">
+                      <img src={url} alt={`Upload preview ${idx}`} className="w-full h-full object-cover" />
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const updated = uploadedImages.filter((u) => u !== url);
+                          setUploadedImages(updated);
+                          if (imageUrl === url) {
+                            setImageUrl(updated[updated.length - 1] || "");
+                          }
+
+                          // Clean up file in Supabase Storage if uploaded
+                          const parts = url.split("/product-images/");
+                          if (parts.length > 1) {
+                            try {
+                              await supabaseBrowser.storage
+                                .from("product-images")
+                                .remove([parts[1]]);
+                            } catch (err) {
+                              console.error("Failed to delete removed image from storage:", err);
+                            }
+                          }
+                        }}
+                        className="absolute top-1 right-1 bg-red-100 text-[#ba1a1a] rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">close</span>
+                      </button>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
