@@ -16,7 +16,7 @@ export default function ProductDetailPage({ params }: PageProps) {
   const router = useRouter();
   const [product, setProduct] = useState<Product | undefined>(undefined);
   const [catalogList, setCatalogList] = useState<Product[]>([]);
-  const [whatsappNumber, setWhatsappNumber] = useState("918978191986");
+  const [whatsappNumber, setWhatsappNumber] = useState("919295403036");
   const [loading, setLoading] = useState(true);
 
   // Safe State initialization
@@ -38,7 +38,10 @@ export default function ProductDetailPage({ params }: PageProps) {
       setSelectedSize(match.sizes[0] || "N/A");
     }
     const savedPhone = localStorage.getItem("sri_leather_whatsapp_number");
-    if (savedPhone) {
+    if (savedPhone === "918978191986") {
+      localStorage.setItem("sri_leather_whatsapp_number", "919295403036");
+      setWhatsappNumber("919295403036");
+    } else if (savedPhone) {
       setWhatsappNumber(savedPhone);
     }
     

@@ -9,8 +9,8 @@ export default function StoreLocationsPage() {
       tag: "MAIN BRANCH",
       address: "R.C. Puram, BHEL, Hyderabad, Telangana",
       timings: "10:00 AM - 10:00 PM (Daily)",
-      phone: "+91 89781 91986",
-      whatsapp: "918978191986",
+      phone: "+91 92954 03036",
+      whatsapp: "919295403036",
       mapUrl: "https://www.google.com/maps/place/Sri+Leather/@17.5053928,78.3051429,17z/data=!3m1!4b1!4m6!3m5!1s0x3bcb92a687b4a4d1:0xfaf7b984a3bd5034!8m2!3d17.5053928!4d78.3077178!16s%2Fg%2F11bc8xbhd_?entry=ttu&g_ep=EgoyMDI2MDYwMS4wIKXMDSoASAFQAw%3D%3D",
       x: "35%",
       y: "40%",
@@ -20,8 +20,8 @@ export default function StoreLocationsPage() {
       tag: "BRANCH",
       address: "G849+PFX, Maruthi Hill Society, Rajender Reddy Nagar Colony, Bandam Kommu, Chanda Nagar, Ramachandrapuram, Hyderabad, Telangana 502032",
       timings: "10:00 AM - 10:00 PM (Daily)",
-      phone: "+91 89781 91986",
-      whatsapp: "918978191986",
+      phone: "+91 92954 03036",
+      whatsapp: "919295403036",
       mapUrl: "https://www.google.com/maps/place/NEW+SRI+LEATHER/@17.5234603,78.2605547,14z/data=!4m10!1m2!2m1!1sSri+Leather+Beeramguda+Hyderabad!3m6!1s0x3bcb93b396aa2dd7:0x6ee5748034e6feff!8m2!3d17.5068995!4d78.3186427!15sCiBTcmkgTGVhdGhlciBCZWVyYW1ndWRhIEh5ZGVyYWJhZJIBCnNob2Vfc3RvcmXgAQA!16s%2Fg%2F11wpy2t0gk?entry=ttu&g_ep=EgoyMDI2MDYwMS4wIKXMDSoASAFQAw%3D%3D",
       x: "65%",
       y: "35%",
@@ -222,9 +222,7 @@ export default function StoreLocationsPage() {
 
           <div className="relative z-10 max-w-lg mx-auto grid grid-cols-1 sm:grid-cols-3 gap-4">
             <a
-              href="https://wa.me/918978191986"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="#"
               className="flex items-center justify-center gap-3 px-5 py-4 bg-[#25d366] text-white font-bold rounded-2xl text-body-sm hover:scale-[1.03] active:scale-[0.98] transition-all shadow-md cursor-pointer"
             >
               <svg className="w-5 h-5 fill-current" viewBox="0 0 24 24">

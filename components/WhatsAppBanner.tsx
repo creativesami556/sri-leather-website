@@ -5,7 +5,7 @@ export default function WhatsAppBanner() {
     <section className="py-12 px-margin-mobile max-w-container-max mx-auto">
       <a
         className="flex items-center justify-between bg-green-50 p-6 rounded-2xl border border-green-200 group transition-all duration-300 hover:shadow-md"
-        href="https://wa.me/919999999999"
+        href="https://wa.me/919295403036"
         target="_blank"
         rel="noopener noreferrer"
       >

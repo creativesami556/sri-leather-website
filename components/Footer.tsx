@@ -103,9 +103,7 @@ export default function Footer() {
               <span>Facebook Page</span>
             </a>
             <a
-              href="https://wa.me/918978191986"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="#"
               className="flex items-center gap-3 text-body-sm text-[#ffdad7]/80 hover:text-white transition-colors group"
             >
               <svg className="w-5 h-5 fill-current text-[#ffe088] group-hover:scale-110 transition-transform" viewBox="0 0 24 24">

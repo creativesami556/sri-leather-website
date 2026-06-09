@@ -19,7 +19,7 @@ export default function WishlistCartPage() {
   const [wishlist, setWishlist] = useState<Product[]>([]);
   // Load cart from localStorage or pre-populate
   const [cart, setCart] = useState<CartItem[]>([]);
-  const [whatsappNumber, setWhatsappNumber] = useState("918978191986");
+  const [whatsappNumber, setWhatsappNumber] = useState("919295403036");
   
   const [user, setUser] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
@@ -65,28 +65,33 @@ export default function WishlistCartPage() {
     // Load Cart (independent of login state)
     const savedCart = localStorage.getItem("sri_leather_cart");
     if (savedCart) {
-      setCart(JSON.parse(savedCart));
+      try {
+        const parsed = JSON.parse(savedCart);
+        const isDummyCart =
+          Array.isArray(parsed) &&
+          parsed.length === 2 &&
+          (parsed[0]?.product?.id === "prod-9" || parsed[0]?.product?.id === "prod-10") &&
+          (parsed[1]?.product?.id === "prod-9" || parsed[1]?.product?.id === "prod-10");
+
+        if (isDummyCart) {
+          setCart([]);
+          localStorage.setItem("sri_leather_cart", JSON.stringify([]));
+          window.dispatchEvent(new Event("storage"));
+        } else {
+          setCart(parsed);
+        }
+      } catch (e) {
+        setCart([]);
+      }
     } else {
-      const items: CartItem[] = [
-        {
-          product: products.find((p) => p.id === "prod-9") || products[0],
-          quantity: 1,
-          selectedSize: 9,
-          selectedColor: "Red",
-        },
-        {
-          product: products.find((p) => p.id === "prod-10") || products[1],
-          quantity: 1,
-          selectedSize: 8,
-          selectedColor: "Mahogany",
-        },
-      ];
-      setCart(items);
-      localStorage.setItem("sri_leather_cart", JSON.stringify(items));
+      setCart([]);
     }
 
     const savedPhone = localStorage.getItem("sri_leather_whatsapp_number");
-    if (savedPhone) {
+    if (savedPhone === "918978191986") {
+      localStorage.setItem("sri_leather_whatsapp_number", "919295403036");
+      setWhatsappNumber("919295403036");
+    } else if (savedPhone) {
       setWhatsappNumber(savedPhone);
     }
 

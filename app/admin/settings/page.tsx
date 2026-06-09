@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 
 export default function AdminSettingsPage() {
-  const [whatsappNumber, setWhatsappNumber] = useState("918978191986");
+  const [whatsappNumber, setWhatsappNumber] = useState("919295403036");
   const [adminName, setAdminName] = useState("Sri Leather Admin");
   const [adminRole, setAdminRole] = useState("Heritage Manager");
   const [adminEmail, setAdminEmail] = useState("manager@srileather.in");
@@ -12,7 +12,10 @@ export default function AdminSettingsPage() {
 
   useEffect(() => {
     const savedPhone = localStorage.getItem("sri_leather_whatsapp_number");
-    if (savedPhone) {
+    if (savedPhone === "918978191986") {
+      localStorage.setItem("sri_leather_whatsapp_number", "919295403036");
+      setWhatsappNumber("919295403036");
+    } else if (savedPhone) {
       setWhatsappNumber(savedPhone);
     }
   }, []);
@@ -52,7 +55,7 @@ export default function AdminSettingsPage() {
               value={whatsappNumber}
               onChange={(e) => setWhatsappNumber(e.target.value)}
               className="w-full bg-[#fcf9f8] border border-[#d4c3c1]/80 rounded-xl px-4 py-2.5 text-body-sm focus:outline-none focus:ring-2 focus:ring-[#321716] focus:border-transparent outline-none"
-              placeholder="e.g. 918978191986"
+              placeholder="e.g. 919295403036"
               required
             />
             <p className="text-[11px] text-[#504443]">

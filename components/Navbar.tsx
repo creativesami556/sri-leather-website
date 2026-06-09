@@ -22,8 +22,19 @@ export default function Navbar() {
     if (savedCart) {
       try {
         const items = JSON.parse(savedCart);
-        const count = items.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0);
-        setCartCount(count);
+        const isDummyCart =
+          Array.isArray(items) &&
+          items.length === 2 &&
+          (items[0]?.product?.id === "prod-9" || items[0]?.product?.id === "prod-10") &&
+          (items[1]?.product?.id === "prod-9" || items[1]?.product?.id === "prod-10");
+
+        if (isDummyCart) {
+          localStorage.setItem("sri_leather_cart", JSON.stringify([]));
+          setCartCount(0);
+        } else {
+          const count = items.reduce((sum: number, item: any) => sum + (item.quantity || 1), 0);
+          setCartCount(count);
+        }
       } catch (e) {
         setCartCount(0);
       }

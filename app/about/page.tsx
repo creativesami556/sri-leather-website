@@ -23,7 +23,7 @@ export default function AboutContactPage() {
 
   const getWhatsAppSupportLink = () => {
     const text = "Hello Sri Leather Support! I am looking for assistance regarding your products.";
-    return `https://wa.me/918978191986?text=${encodeURIComponent(text)}`;
+    return `https://wa.me/919295403036?text=${encodeURIComponent(text)}`;
   };
 
   return (
